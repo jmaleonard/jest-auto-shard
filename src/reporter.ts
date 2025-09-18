@@ -38,19 +38,24 @@ export class JestShardReporter implements Reporter {
       ...options
     };
 
-    // Check if running in auto-shard mode
-    this.isAutoShard = process.env.JEST_AUTO_SHARD === 'true';
+    const hasNativeSharding = globalConfig.shard !== undefined;
 
-    // Auto-detect shard info if not provided
-    if (this.isAutoShard && !process.env.JEST_SHARD_INDEX) {
-      // Try to auto-assign a shard
-      this.autoAssignShard();
+    this.isAutoShard = process.env.JEST_AUTO_SHARD === 'true' && !hasNativeSharding;
+    if (hasNativeSharding && globalConfig.shard) {
+      this.shardInfo = {
+        index: globalConfig.shard.shardIndex,
+        total: globalConfig.shard.shardCount
+      };
+    } else {
+      if (this.isAutoShard && !process.env.JEST_SHARD_INDEX) {
+        this.autoAssignShard();
+      }
+
+      this.shardInfo = {
+        index: parseInt(process.env.JEST_SHARD_INDEX || this.options.shardIndex?.toString() || '1'),
+        total: parseInt(process.env.JEST_TOTAL_SHARDS || this.options.totalShards?.toString() || '1')
+      };
     }
-
-    this.shardInfo = {
-      index: parseInt(process.env.JEST_SHARD_INDEX || this.options.shardIndex?.toString() || '1'),
-      total: parseInt(process.env.JEST_TOTAL_SHARDS || this.options.totalShards?.toString() || '1')
-    };
 
     this.coverageCollector = new CoverageCollector({
       shardedCoverageDir: this.options.shardedCoverageDir,
@@ -95,7 +100,7 @@ export class JestShardReporter implements Reporter {
     }
   }
 
-  onRunStart(results: AggregatedResult, options: ReporterOnStartOptions): void {
+  onRunStart(_results: AggregatedResult, options: ReporterOnStartOptions): void {
     this.startTime = Date.now();
     console.log(chalk.bold.cyan(`\n🚀 Starting Test Shard ${this.shardInfo.index}/${this.shardInfo.total}\n`));
     this.log(`Running ${options.estimatedTime} estimated tests`);
@@ -130,7 +135,7 @@ export class JestShardReporter implements Reporter {
     this.log(`Progress: ${stats}`);
   }
 
-  async onRunComplete(contexts: Set<TestContext>, results: AggregatedResult): Promise<void> {
+  async onRunComplete(_contexts: Set<TestContext>, results: AggregatedResult): Promise<void> {
     const duration = (Date.now() - this.startTime) / 1000;
 
     console.log('\n' + chalk.bold('═'.repeat(60)));
@@ -167,16 +172,23 @@ export class JestShardReporter implements Reporter {
     if (fs.existsSync(coverageFile)) {
       try {
         const coverageData = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
+
         await this.coverageCollector.collectShardCoverage(this.shardInfo.index, coverageData);
         console.log(chalk.green(`  ✓ Coverage saved for shard ${this.shardInfo.index}`));
 
         if (this.options.mergeCoverageOnComplete) {
-          const isComplete = await this.coverageCollector.isAllShardsComplete(this.shardInfo.total);
+          if (this.isAutoShard) {
+            const isComplete = await this.coverageCollector.isAllShardsComplete(this.shardInfo.total);
 
-          if (isComplete || process.env.JEST_MERGE_COVERAGE === 'true') {
+            if (isComplete || process.env.JEST_MERGE_COVERAGE === 'true') {
+              await this.mergeCoverageReports();
+            } else {
+              console.log(chalk.yellow(`  ⏳ Waiting for ${this.shardInfo.total - await this.coverageCollector.getShardCount()} more shard(s) to complete...`));
+            }
+          } else if (process.env.JEST_MERGE_COVERAGE === 'true') {
             await this.mergeCoverageReports();
           } else {
-            console.log(chalk.yellow(`  ⏳ Waiting for ${this.shardInfo.total - await this.coverageCollector.getShardCount()} more shard(s) to complete...`));
+            console.log(chalk.blue(`  ℹ Coverage saved for shard ${this.shardInfo.index}. Use 'jest-shard merge' to combine all shards.`));
           }
         }
       } catch (error) {
@@ -186,6 +198,7 @@ export class JestShardReporter implements Reporter {
       this.log(`No coverage file found for shard ${this.shardInfo.index}`, true);
     }
   }
+
 
   private async mergeCoverageReports(): Promise<void> {
     console.log('\n' + chalk.bold.blue('📊 Merging coverage from all shards...'));

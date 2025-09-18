@@ -11,6 +11,7 @@
     "build": "tsc",
     "clean": "rm -rf dist coverage coverage-shards coverage-final",
     "prepare": "npm run build",
+    "postinstall": "chmod +x dist/cli.js 2>/dev/null || true",
     "test": "jest",
     "test:shard": "npm run test:shard:1 && npm run test:shard:2 && npm run merge:coverage",
     "test:shard:1": "JEST_TOTAL_SHARDS=2 JEST_SHARD_INDEX=1 jest --shard=1/2",
@@ -63,7 +64,7 @@
   "dependencies": {
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
-    "glob": "^10.3.10",
+    "glob": "^10.4.5",
     "istanbul-lib-coverage": "^3.2.2",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.1.6"

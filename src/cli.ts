@@ -3,7 +3,7 @@
 import { Command } from 'commander';
 import { AutoShardRunner, AutoShardCoordinator } from './auto-shard';
 import { mergeCoverageReports } from './index';
-import * as chalk from 'chalk';
+import chalk from 'chalk';
 import * as os from 'os';
 import { execSync } from 'child_process';
 import * as path from 'path';
